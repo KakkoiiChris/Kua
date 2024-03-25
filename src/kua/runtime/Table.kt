@@ -13,13 +13,15 @@
  *         Kotlin Implementation
  *          Christian Alexander
  */
-package kua.script
+package kua.runtime
 
+import kua.KuaValue
+import kua.Nil
 import kua.parser.Expr
 
 class Table {
-    private val list = mutableListOf<Any>()
-    private val map = mutableMapOf<String, Any>()
+    private val list = mutableListOf<KuaValue<*>>()
+    private val map = mutableMapOf<String, KuaValue<*>>()
     
     val length get() = list.indexOfLast { it !is Nil } + 1
     
@@ -35,7 +37,7 @@ class Table {
             list[index.toInt() - 1]
         }
     
-    operator fun plusAssign(value: Any) {
+    operator fun plusAssign(value: KuaValue<*>) {
         list += value
     }
     
@@ -52,7 +54,7 @@ class Table {
             symbol
         }
     
-    operator fun set(name: String, value: Any) {
+    operator fun set(name: String, value: KuaValue<*>) {
         map[name] = value
     }
     

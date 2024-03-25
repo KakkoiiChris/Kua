@@ -2,541 +2,545 @@ package kua.parser
 
 import kua.lexer.Lexer
 import kua.lexer.Token
-import kua.lexer.Token.Type.*
-import kua.lexer.Token.Type.Function
+import kua.lexer.TokenType
+import kua.lexer.TokenType.*
 import kua.util.*
 
 class Parser(private val lexer: Lexer) {
     private var currentToken = lexer.next()
-    
+
     fun parse(): Chunk {
         val stmts = mutableListOf<Stmt>()
-        
-        while (!skip(EndOfFile))
+
+        while (!skip(EndOfFile)) {
             stmts += stmt()
-        
+        }
+
         return Chunk(stmts)
     }
-    
+
     private fun peek() = currentToken
-    
+
     private fun step() {
-        if (lexer.hasNext())
+        if (lexer.hasNext()) {
             currentToken = lexer.next()
+        }
     }
-    
-    private fun match(type: Token.Type) =
+
+    private fun match(type: TokenType) =
         peek().type == type
-    
-    private fun matchAny(vararg types: Token.Type): Boolean {
-        for (type in types)
-            if (match(type))
-                return true
-        
-        return false
-    }
-    
-    private fun skip(type: Token.Type) =
+
+    private inline fun <reified X : TokenType> match() =
+        X::class.isInstance(peek().type)
+
+    @Suppress("UNCHECKED_CAST")
+    private inline fun <reified X : TokenType> get(): Token<X> =
+        peek() as Token<X>
+
+    private fun matchAny(vararg types: TokenType) =
+        types.any { match(it) }
+
+    private fun skip(type: TokenType) =
         if (match(type)) {
             step()
-            
+
             true
         }
         else false
-    
-    private fun mustSkip(type: Token.Type) {
-        if (!skip(type))
-            invalidType(type, peek().type, peek().location)
+
+    private fun mustSkip(type: TokenType) {
+        if (!skip(type)) {
+            invalidType(type, peek().type, here())
+        }
     }
-    
+
     private fun skipSemicolons() {
-        while (skip(Semicolon)) Unit
+        while (skip(Symbol.SEMICOLON)) Unit
     }
-    
+
     private fun here() =
-        peek().location
-    
+        peek().context
+
     private fun stmt(): Stmt {
         val stmt = when {
-            match(Do)       -> doStmt()
-            
-            match(If)       -> ifStmt()
-            
-            match(While)    -> whileStmt()
-            
-            match(Repeat)   -> repeatStmt()
-            
-            match(For)      -> forStmt()
-            
-            match(Break)    -> breakStmt()
-            
-            match(Function) -> functionStmt()
-            
-            match(Return)   -> returnStmt()
-            
-            match(Local)    -> localStmt()
-            
-            else            -> expressionStmt()
+            match(Keyword.DO)       -> doStmt()
+
+            match(Keyword.IF)       -> ifStmt()
+
+            match(Keyword.WHILE)    -> whileStmt()
+
+            match(Keyword.REPEAT)   -> repeatStmt()
+
+            match(Keyword.FOR)      -> forStmt()
+
+            match(Keyword.BREAK)    -> breakStmt()
+
+            match(Keyword.FUNCTION) -> functionStmt()
+
+            match(Keyword.RETURN)   -> returnStmt()
+
+            match(Keyword.LOCAL)    -> localStmt()
+
+            else                    -> expressionStmt()
         }
-        
+
         skipSemicolons()
-        
+
         return stmt
     }
-    
-    private fun block(begin: Token.Type, vararg ends: Token.Type): Stmt.Block {
+
+    private fun block(begin: TokenType, vararg ends: Keyword): Stmt.Block {
         val location = here()
-        
+
         mustSkip(begin)
-        
+
         skipSemicolons()
-        
+
         val stmts = mutableListOf<Stmt>()
-        
-        while (!matchAny(*ends))
+
+        while (!matchAny(*ends)) {
             stmts += stmt()
-        
+        }
+
         return Stmt.Block(location, stmts)
     }
-    
+
     private fun doStmt() =
-        block(Do, End)
-    
+        block(Keyword.DO, Keyword.END)
+
     private fun ifStmt(): Stmt.If {
         val location = here()
-        
-        mustSkip(If)
-        
+
+        mustSkip(Keyword.IF)
+
         val branches = mutableListOf<Stmt.If.Branch>()
-        
+
         do {
             val branchLocation = here()
-            
+
             val test = expr()
-            
-            val block = block(Then, ElseIf, Else, End)
-            
+
+            val block = block(Keyword.THEN, Keyword.ELSEIF, Keyword.ELSE, Keyword.END)
+
             branches += Stmt.If.Branch(branchLocation, test, block)
         }
-        while (match(ElseIf))
-        
-        val elze = if (match(Else))
-            block(Else, End)
+        while (match(Keyword.ELSEIF))
+
+        val `else` = if (match(Keyword.ELSE))
+            block(Keyword.ELSE, Keyword.END)
         else
             Stmt.None
-        
-        mustSkip(End)
-        
-        return Stmt.If(location, branches, elze)
+
+        mustSkip(Keyword.END)
+
+        return Stmt.If(location, branches, `else`)
     }
-    
+
     private fun whileStmt(): Stmt.While {
         val location = here()
-        
-        mustSkip(While)
-        
+
+        mustSkip(Keyword.WHILE)
+
         val test = expr()
-        
-        val block = block(Do, End)
-        
-        mustSkip(End)
-        
+
+        val block = block(Keyword.DO, Keyword.END)
+
+        mustSkip(Keyword.END)
+
         return Stmt.While(location, test, block)
     }
-    
+
     private fun repeatStmt(): Stmt.Repeat {
         val location = here()
-        
-        val block = block(Repeat, Until)
-        
-        mustSkip(Until)
-        
+
+        val block = block(Keyword.REPEAT, Keyword.UNTIL)
+
+        mustSkip(Keyword.UNTIL)
+
         val test = expr()
-        
+
         return Stmt.Repeat(location, test, block)
     }
-    
+
     private fun forStmt(): Stmt {
         val location = here()
-        
-        mustSkip(For)
-        
+
+        mustSkip(Keyword.FOR)
+
         return Stmt.None
     }
-    
+
     private fun breakStmt(): Stmt.Break {
         val location = here()
-        
-        mustSkip(Break)
-        
+
+        mustSkip(Keyword.BREAK)
+
         return Stmt.Break(location)
     }
-    
+
     private fun functionStmt(): Stmt.Function {
         val location = here()
-        
-        mustSkip(Function)
-        
+
+        mustSkip(Keyword.FUNCTION)
+
         val name = name()
-        
-        mustSkip(LeftParen)
-        
+
+        mustSkip(Symbol.LEFT_PAREN)
+
         val params = mutableListOf<Expr.Name>()
-        
-        if (!match(RightParen)) {
+
+        if (!match(Symbol.RIGHT_PAREN)) {
             do
                 params += name()
-            while (skip(Comma))
+            while (skip(Symbol.COMMA))
         }
-        
-        val block = block(RightParen, End)
-        
-        mustSkip(End)
-        
+
+        val block = block(Symbol.RIGHT_PAREN, Keyword.END)
+
+        mustSkip(Keyword.END)
+
         return Stmt.Function(location, name, params, block)
     }
-    
+
     private fun returnStmt(): Stmt.Return {
         val location = here()
-        
-        mustSkip(Return)
-        
+
+        mustSkip(Keyword.RETURN)
+
         val exprs = mutableListOf<Expr>()
-        
-        if (!matchAny(End, Else, Until)) {
-            do
+
+        if (!matchAny(Keyword.END, Keyword.ELSE, Keyword.UNTIL)) {
+            do {
                 exprs += expr()
-            while (skip(Comma))
-            
-            if (!matchAny(End, Else, Until))
-                invalidReturn(location)
+            }
+            while (skip(Symbol.COMMA))
+
+            if (!matchAny(Keyword.END, Keyword.ELSE, Keyword.UNTIL)) invalidReturn(location)
         }
-        
-        if (exprs.isEmpty())
-            exprs += Expr.None
-        
+
         return Stmt.Return(location, exprs)
     }
-    
+
     private fun localStmt(): Stmt.Assign {
         val location = here()
-        
-        mustSkip(Local)
-        
+
+        mustSkip(Keyword.LOCAL)
+
         val names = mutableListOf<Expr.Name>()
-        
-        do
+
+        do {
             names += name()
-        while (skip(Comma))
-        
-        mustSkip(Equal)
-        
+        }
+        while (skip(Symbol.COMMA))
+
+        mustSkip(Symbol.EQUAL)
+
         val exprs = mutableListOf<Expr>()
-        
-        do
+
+        do {
             exprs += expr()
-        while (skip(Comma))
-        
+        }
+        while (skip(Symbol.COMMA))
+
         return Stmt.Assign(location, true, names, exprs)
     }
-    
+
     private fun expressionStmt(): Stmt {
         val location = here()
-        
+
         val expr = expr()
-        
-        return if (matchAny(Comma, Equal) && expr is Expr.Name) {
+
+        return if (matchAny(Symbol.COMMA, Symbol.EQUAL) && expr is Expr.Name) {
             val names = mutableListOf(expr)
-            
-            if (!skip(Equal)) {
-                while (skip(Comma))
+
+            if (!skip(Symbol.EQUAL)) {
+                while (skip(Symbol.COMMA)) {
                     names += name()
-                
-                mustSkip(Equal)
+                }
+
+                mustSkip(Symbol.EQUAL)
             }
-            
+
             val exprs = mutableListOf<Expr>()
-            
-            do
+
+            do {
                 exprs += expr()
-            while (skip(Comma))
-            
+            }
+            while (skip(Symbol.COMMA))
+
             Stmt.Assign(location, false, names, exprs)
         }
         else Stmt.Expression(location, expr)
     }
-    
+
     private fun expr() =
         logicalOr()
-    
+
     private fun logicalOr(): Expr {
         var expr = logicalAnd()
-        
-        while (matchAny(Or)) {
+
+        while (matchAny(Keyword.OR)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, logicalAnd())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, logicalAnd())
         }
-        
+
         return expr
     }
-    
+
     private fun logicalAnd(): Expr {
         var expr = equality()
-        
-        while (matchAny(And)) {
+
+        while (matchAny(Keyword.AND)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, equality())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, equality())
         }
-        
+
         return expr
     }
-    
+
     private fun equality(): Expr {
         var expr = relational()
-        
-        while (matchAny(DoubleEqual, TildeEqual)) {
+
+        while (matchAny(Symbol.DOUBLE_EQUAL, Symbol.TILDE_EQUAL)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, relational())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, relational())
         }
-        
+
         return expr
     }
-    
+
     private fun relational(): Expr {
         var expr = concat()
-        
-        while (matchAny(Less, LessEqual, Greater, GreaterEqual)) {
+
+        while (matchAny(Symbol.LESS, Symbol.LESS_EQUAL, Symbol.GREATER, Symbol.GREATER_EQUAL)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, concat())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, concat())
         }
-        
+
         return expr
     }
-    
+
     private fun concat(): Expr {
         var expr = additive()
-        
-        while (matchAny(DoubleDot)) {
+
+        while (matchAny(Symbol.DOUBLE_DOT)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, concat())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, concat())
         }
-        
+
         return expr
     }
-    
+
     private fun additive(): Expr {
         var expr = multiplicative()
-        
-        while (matchAny(Plus, Dash)) {
+
+        while (matchAny(Symbol.PLUS, Symbol.DASH)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, multiplicative())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, multiplicative())
         }
-        
+
         return expr
     }
-    
+
     private fun multiplicative(): Expr {
         var expr = prefix()
-        
-        while (matchAny(Star, Slash, Percent)) {
+
+        while (matchAny(Symbol.STAR, Symbol.SLASH, Symbol.DOUBLE_SLASH, Symbol.PERCENT)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, prefix())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, prefix())
         }
-        
+
         return expr
     }
-    
+
     private fun prefix(): Expr {
-        return if (matchAny(Dash, Not, Pound)) {
+        return if (matchAny(Symbol.DASH, Keyword.NOT, Symbol.POUND)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            Expr.Unary(op.location, Expr.Unary.Operator[op.type], prefix())
+
+            Expr.Unary(op.context, Expr.Unary.Operator[op.type], prefix())
         }
         else {
             exponential()
         }
     }
-    
+
     private fun exponential(): Expr {
         var expr = postfix()
-        
-        while (matchAny(Caret)) {
+
+        while (matchAny(Symbol.CARET)) {
             val op = peek()
-            
+
             mustSkip(op.type)
-            
-            expr = Expr.Binary(op.location, Expr.Binary.Operator[op.type], expr, exponential())
+
+            expr = Expr.Binary(op.context, Expr.Binary.Operator[op.type], expr, exponential())
         }
-        
+
         return expr
     }
-    
+
     private fun postfix(): Expr {
         var expr = terminal()
-        
-        while (matchAny(Dot, LeftSquare, LeftParen, LeftBrace, Value)) {
+
+        while (matchAny(Symbol.DOT, Symbol.LEFT_SQUARE, Symbol.LEFT_PAREN, Symbol.LEFT_BRACE) || match<Value<*>>()) {
             val op = peek()
-            
+
             expr = when {
-                skip(Dot)        -> {
-                    val member = name()
-                    
-                    if (skip(Equal))
-                        Expr.SetMember(op.location, expr, member, expr())
+                skip(Symbol.DOT)         -> {
+                    val member = name().toValue()
+
+                    if (skip(Symbol.EQUAL))
+                        Expr.SetIndex(op.context, expr, member, expr())
                     else
-                        Expr.GetMember(op.location, expr, member)
+                        Expr.GetIndex(op.context, expr, member)
                 }
-                
-                skip(LeftSquare) -> {
+
+                skip(Symbol.LEFT_SQUARE) -> {
                     val index = expr()
-                    
-                    mustSkip(RightSquare)
-                    
-                    if (skip(Equal))
-                        Expr.SetIndex(op.location, expr, index, expr())
+
+                    mustSkip(Symbol.RIGHT_SQUARE)
+
+                    if (skip(Symbol.EQUAL))
+                        Expr.SetIndex(op.context, expr, index, expr())
                     else
-                        Expr.GetIndex(op.location, expr, index)
+                        Expr.GetIndex(op.context, expr, index)
                 }
-                
-                skip(LeftParen)  -> {
+
+                skip(Symbol.LEFT_PAREN)  -> {
                     val args = mutableListOf<Expr>()
-                    
-                    if (!skip(RightParen)) {
-                        do
+
+                    if (!skip(Symbol.RIGHT_PAREN)) {
+                        do {
                             args += expr()
-                        while (skip(Comma))
-                        
-                        mustSkip(RightParen)
+                        }
+                        while (skip(Symbol.COMMA))
+
+                        mustSkip(Symbol.RIGHT_PAREN)
                     }
-                    
-                    Expr.Invoke(op.location, expr, args)
+
+                    Expr.Invoke(op.context, expr, args)
                 }
-                
-                match(LeftBrace) -> {
+
+                match(Symbol.LEFT_BRACE) -> {
                     val arg = table()
-                    
-                    Expr.Invoke(op.location, expr, listOf(arg))
+
+                    Expr.Invoke(op.context, expr, listOf(arg))
                 }
-                
-                match(Value)     -> Expr.Invoke(op.location, expr, listOf(value()))
-                
-                else             -> failure("Broken postfix operator")
+
+                match<Value<*>>()        -> Expr.Invoke(op.context, expr, listOf(value()))
+
+                else                     -> failure("Broken postfix operator")
             }
         }
-        
+
         return expr
     }
-    
+
     private fun terminal() = when {
-        match(Value)     -> value()
-        
-        match(Name)      -> name()
-        
-        match(LeftBrace) -> table()
-        
-        match(Function)  -> lambda()
-        
-        match(LeftParen) -> nested()
-        
-        else             -> invalidTerminal(peek().type, peek().location)
+        match<Value<*>>()        -> value()
+
+        match<Name>()            -> name()
+
+        match(Symbol.LEFT_BRACE) -> table()
+
+        match(Keyword.FUNCTION)  -> lambda()
+
+        match(Symbol.LEFT_PAREN) -> nested()
+
+        else                     -> invalidTerminal(peek().type, peek().context)
     }
-    
+
     private fun value(): Expr.Value {
-        val token = peek()
-        
-        mustSkip(Value)
-        
-        return Expr.Value(token.location, token.value)
+        val (context, type) = get<Value<*>>()
+
+        return Expr.Value(context, type.value)
     }
-    
+
     private fun name(): Expr.Name {
-        val token = peek()
-        
-        mustSkip(Name)
-        
-        return Expr.Name(token.location, token.value as String)
+        val (context, type) = get<Name>()
+
+        return Expr.Name(context, type.value)
     }
-    
+
     private fun table(): Expr.Table {
         val location = here()
-        
-        mustSkip(LeftBrace)
-        
+
+        mustSkip(Symbol.LEFT_BRACE)
+
         val listInit = mutableListOf<Expr>()
         val mapInit = mutableMapOf<String, Expr>()
-        
-        if (!skip(RightBrace)) {
+
+        if (!skip(Symbol.RIGHT_BRACE)) {
             do {
                 val expr = expr()
-                
-                if (skip(Equal)) {
+
+                if (skip(Symbol.EQUAL)) {
                     if (expr is Expr.Name)
                         mapInit[expr.name] = expr()
                     else
-                        invalidTableKey(expr.location)
+                        invalidTableKey(expr.context)
                 }
                 else
                     listInit.add(expr)
             }
-            while (skip(Comma))
-            
-            mustSkip(RightBrace)
+            while (skip(Symbol.COMMA))
+
+            mustSkip(Symbol.RIGHT_BRACE)
         }
-        
+
         return Expr.Table(location, listInit, mapInit)
     }
-    
+
     private fun lambda(): Expr.Lambda {
         val location = here()
-        
-        mustSkip(Function)
-        
-        mustSkip(LeftParen)
-        
+
+        mustSkip(Keyword.FUNCTION)
+
+        mustSkip(Symbol.LEFT_PAREN)
+
         val params = mutableListOf<Expr.Name>()
-        
-        if (!match(RightParen))
+
+        if (!match(Symbol.RIGHT_PAREN))
             do
                 params += name()
-            while (skip(Comma))
-        
-        val block = block(RightParen, End)
-        
-        mustSkip(End)
-        
+            while (skip(Symbol.COMMA))
+
+        val block = block(Symbol.RIGHT_PAREN, Keyword.END)
+
+        mustSkip(Keyword.END)
+
         return Expr.Lambda(location, params, block)
     }
-    
+
     private fun nested(): Expr {
-        mustSkip(LeftParen)
-        
+        mustSkip(Symbol.LEFT_PAREN)
+
         val expr = expr()
-        
-        mustSkip(RightParen)
-        
+
+        mustSkip(Symbol.RIGHT_PAREN)
+
         return expr
     }
 }

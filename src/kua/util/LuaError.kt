@@ -1,14 +1,15 @@
 package kua.util
 
-import kua.lexer.Location
+import kua.lexer.Context
 import kua.lexer.Token
+import kua.lexer.TokenType
 import kua.parser.Expr
 import kua.parser.Stmt
 
 class LuaError(
     private val stage: String,
     private val subMessage: String,
-    private val location: Location = Location(),
+    private val context: Context = Context.none,
 ) : RuntimeException() {
     private val traces = mutableListOf<Stmt.Trace>()
     
@@ -17,81 +18,81 @@ class LuaError(
     }
     
     override fun toString() = buildString {
-        appendLine("Lua $stage Error: $subMessage!$location")
+        appendLine("Lua $stage Error: $subMessage!$context")
         
         val maxWidth = traces.map { it.qualifier.length }.maxOrNull() ?: 0
         
         for (trace in traces) {
-            appendLine("\t${trace.qualifier.padEnd(maxWidth)}$location")
+            appendLine("\t${trace.qualifier.padEnd(maxWidth)}$context")
         }
     }
 }
 
-private fun generalError(subMessage: String, location: Location): Nothing =
-    throw LuaError("General", subMessage, location)
+private fun generalError(subMessage: String, context: Context): Nothing =
+    throw LuaError("General", subMessage, context)
 
 fun failure(subMessage: String): Nothing =
-    generalError(subMessage, Location())
+    generalError(subMessage, Context.none)
 
-private fun lexerError(subMessage: String, location: Location): Nothing =
-    throw LuaError("Lexer", subMessage, location)
+private fun lexerError(subMessage: String, context: Context): Nothing =
+    throw LuaError("Lexer", subMessage, context)
 
-fun illegalCharacter(char: Char, location: Location): Nothing =
-    lexerError("Character '$char' is illegal", location)
+fun illegalCharacter(char: Char, context: Context): Nothing =
+    lexerError("Character '$char' is illegal", context)
 
-fun invalidEscape(char: Char, location: Location): Nothing =
-    lexerError("Escaped character '$char' is invalid", location)
+fun invalidEscape(char: Char, context: Context): Nothing =
+    lexerError("Escaped character '$char' is invalid", context)
 
-fun illegalString(string: String, location: Location): Nothing =
-    lexerError("Character sequence '$string' is illegal", location)
+fun illegalString(string: String, context: Context): Nothing =
+    lexerError("Character sequence '$string' is illegal", context)
 
-fun invalidNumber(number: String, location: Location): Nothing =
-    lexerError("Number '$number' is invalid", location)
+fun invalidNumber(number: String, context: Context): Nothing =
+    lexerError("Number '$number' is invalid", context)
 
-private fun parserError(subMessage: String, location: Location): Nothing =
-    throw LuaError("Parser", subMessage, location)
+private fun parserError(subMessage: String, context: Context): Nothing =
+    throw LuaError("Parser", subMessage, context)
 
-fun invalidReturn(location: Location): Nothing =
-    parserError("Return must be the last statement in a block or chunk", location)
+fun invalidReturn(context: Context): Nothing =
+    parserError("Return must be the last statement in a block or chunk", context)
 
-fun invalidSingleArgument(arg: Any, location: Location): Nothing =
-    parserError("Single argument '$arg' is invalid; must be string or table", location)
+fun invalidSingleArgument(arg: Any, context: Context): Nothing =
+    parserError("Single argument '$arg' is invalid; must be string or table", context)
 
-fun invalidTableKey(location: Location): Nothing =
-    parserError("Table key is invalid; must be a valid name", location)
+fun invalidTableKey(context: Context): Nothing =
+    parserError("Table key is invalid; must be a valid name", context)
 
-fun invalidTerminal(type: Token.Type, location: Location): Nothing =
-    parserError("Terminal beginning with '$type' is invalid", location)
+fun invalidTerminal(type: TokenType, context: Context): Nothing =
+    parserError("Terminal beginning with '$type' is invalid", context)
 
-fun invalidType(type: Token.Type, expected: Token.Type, location: Location): Nothing =
-    parserError("Token type '$type' is invalid; expected '$expected'", location)
+fun invalidType(type: TokenType, expected: TokenType, context: Context): Nothing =
+    parserError("Token type '$type' is invalid; expected '$expected'", context)
 
-private fun scriptError(subMessage: String, location: Location): Nothing =
-    throw LuaError("Script", subMessage, location)
+private fun scriptError(subMessage: String, context: Context): Nothing =
+    throw LuaError("Script", subMessage, context)
 
-fun invalidStringIndex(invalid: Any, location: Location): Nothing =
-    scriptError("Index '$invalid' for string is invalid; must be a number", location)
+fun invalidStringIndex(invalid: Any, context: Context): Nothing =
+    scriptError("Index '$invalid' for string is invalid; must be a number", context)
 
-fun invalidTableIndex(invalid: Any, location: Location): Nothing =
-    scriptError("Index '$invalid' for table is invalid; must be a number or string", location)
+fun invalidTableIndex(invalid: Any, context: Context): Nothing =
+    scriptError("Index '$invalid' for table is invalid; must be a number or string", context)
 
-fun invalidLeftOperand(left: Any, operator: Expr.Binary.Operator, location: Location): Nothing =
-    scriptError("Left operand '$left' for '$operator' operator is invalid!", location)
+fun invalidLeftOperand(left: Any, operator: Expr.Binary.Operator, context: Context): Nothing =
+    scriptError("Left operand '$left' for '$operator' operator is invalid!", context)
 
-fun invalidRightOperand(right: Any, operator: Expr.Binary.Operator, location: Location): Nothing =
-    scriptError("Right operand '$right' for '$operator' operator is invalid!", location)
+fun invalidRightOperand(right: Any, operator: Expr.Binary.Operator, context: Context): Nothing =
+    scriptError("Right operand '$right' for '$operator' operator is invalid!", context)
 
-fun invalidUnaryOperand(expr: Any, operator: Expr.Unary.Operator, location: Location): Nothing =
-    scriptError("Operand '$expr' for '$operator' operator is invalid!", location)
+fun invalidUnaryOperand(expr: Any, operator: Expr.Unary.Operator, context: Context): Nothing =
+    scriptError("Operand '$expr' for '$operator' operator is invalid!", context)
 
-fun nonAccessedValue(value: Any, location: Location): Nothing =
-    scriptError("Value '$value' cannot be accessed", location)
+fun nonAccessedValue(value: Any, context: Context): Nothing =
+    scriptError("Value '$value' cannot be accessed", context)
 
-fun nonIndexedValue(value: Any, location: Location): Nothing =
-    scriptError("Value '$value' cannot be indexed", location)
+fun nonIndexedValue(value: Any, context: Context): Nothing =
+    scriptError("Value '$value' cannot be indexed", context)
 
-fun numberCoercion(coerced: Any, location: Location): Nothing =
-    scriptError("Value '$coerced' cannot be coerced to a number", location)
+fun numberCoercion(coerced: Any, context: Context): Nothing =
+    scriptError("Value '$coerced' cannot be coerced to a number", context)
 
-fun unassignableLValue(lValue: Any, location: Location): Nothing =
-    scriptError("LValue '$lValue' is unassignable", location)
+fun unassignableLValue(lValue: Any, context: Context): Nothing =
+    scriptError("LValue '$lValue' is unassignable", context)

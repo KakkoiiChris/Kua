@@ -1,5 +1,7 @@
-package kua.script
+package kua.runtime
 
+import kua.KuaValue
+import kua.Nil
 import kua.parser.Expr
 
 class Memory {
@@ -22,7 +24,7 @@ class Memory {
         return stack
     }
     
-    operator fun get(name: Expr.Name): Any {
+    operator fun get(name: Expr.Name): KuaValue<*> {
         var here: Scope? = stack
         
         while (here != null) {
@@ -38,7 +40,7 @@ class Memory {
         return global[name.name] ?: Nil
     }
     
-    operator fun set(name: Expr.Name, local: Boolean, value: Any) {
+    operator fun set(name: Expr.Name, local: Boolean, value: KuaValue<*>) {
         var here: Scope? = if (local) stack else global
         
         while (here != null) {
@@ -60,5 +62,5 @@ class Memory {
             global[name.name] = value
     }
     
-    class Scope(val parent: Scope? = null) : MutableMap<String, Any> by mutableMapOf()
+    class Scope(val parent: Scope? = null) : MutableMap<String, KuaValue<*>> by mutableMapOf()
 }
